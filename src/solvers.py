@@ -134,7 +134,7 @@ def BA_GMRES(A, B, b, iter, m, n, num_angles, p = 0, stop_rule = 'NO', eta = 0, 
     OUTPUT
     X: Solution matrix, k'th column is the solution to the k'th iteration
     R: Residual matrix, k'th column corresponds to the residuals for the k'th iteration 
-    
+    H: T final (rectangular) Hessenberg matrix whose leading minors are the Hessenberg matrices in the previous steps
     '''
     print("\nBA-GMRES is running")
     
@@ -221,7 +221,7 @@ def BA_GMRES(A, B, b, iter, m, n, num_angles, p = 0, stop_rule = 'NO', eta = 0, 
         residual = R[:,k-1]
         X[:,l*p+1:l*p+k+1] = Xp
 
-    return X, R
+    return X, R, H, W
 
 def NCP(r, m, num_angles):
     ''' 

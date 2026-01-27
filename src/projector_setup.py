@@ -1,48 +1,8 @@
 # %% ***************************************************** Import Packages *****************************************************
 import numpy as np
 import astra 
-import tigre
-
-# %% ********************************************************** TIGRE **********************************************************
-class fp_tigre:
-    '''TIGRE forward projector
-    Forward projection models: 'Siddon' (Line) or 'interpolated' (Joseph)
-    '''
-
-    def __init__(self,ct_tigre):
-        self.geo        = ct_tigre.geo
-        self.num_dets   = ct_tigre.num_dets
-        self.num_angles = ct_tigre.num_angles
-        self.angles     = ct_tigre.proj_angles
-        self.mode       = ct_tigre.proj_geom
-        self.fp_model   = ct_tigre.fp_model
-
-    def apply_A(self,x):
-        sinogram = tigre.Ax(x.reshape(self.geo.nVoxel),self.geo,self.angles,projection_type=self.fp_model,mode=self.mode).reshape(self.num_angles,self.num_dets)
-        return sinogram.reshape(-1)
-
-    def __matmul__(self,x):
-        return self.apply_A(x)
-
-class bp_tigre:
-    '''TIGRE back projector
-    Back projection models: 'matched' or 'FDK'
-    '''
-    def __init__(self,ct_tigre):
-        self.geo        = ct_tigre.geo
-        self.angles     = ct_tigre.proj_angles
-        self.num_dets   = ct_tigre.num_dets
-        self.num_angles = ct_tigre.num_angles
-        self.num_pixels = ct_tigre.num_pixels
-        self.mode       = ct_tigre.proj_geom
-        self.bp_model   = ct_tigre.bp_model
-
-    def apply_B(self,b):
-        Bb = tigre.Atb(b.reshape(self.num_angles, 1, self.num_dets), self.geo, self.angles, backprojection_type=self.bp_model,mode=self.mode).reshape(self.num_pixels,self.num_pixels)
-        return Bb.reshape(-1)
-
-    def __matmul__(self,b):
-        return self.apply_B(b)
+#import tigre
+   
 
 # %% ********************************************************** ASTRA **********************************************************
 class fp_astra:
@@ -106,3 +66,48 @@ class bp_astra:
 
     def __matmul__(self,b):
         return self.apply_B(b)
+
+
+# %% ********************************************************** TIGRE **********************************************************
+"""
+class fp_tigre:
+    '''TIGRE forward projector
+    Forward projection models: 'Siddon' (Line) or 'interpolated' (Joseph)
+    '''
+
+    def __init__(self,ct_tigre):
+        self.geo        = ct_tigre.geo
+        self.num_dets   = ct_tigre.num_dets
+        self.num_angles = ct_tigre.num_angles
+        self.angles     = ct_tigre.proj_angles
+        self.mode       = ct_tigre.proj_geom
+        self.fp_model   = ct_tigre.fp_model
+
+    def apply_A(self,x):
+        sinogram = tigre.Ax(x.reshape(self.geo.nVoxel),self.geo,self.angles,projection_type=self.fp_model,mode=self.mode).reshape(self.num_angles,self.num_dets)
+        return sinogram.reshape(-1)
+
+    def __matmul__(self,x):
+        return self.apply_A(x)
+
+class bp_tigre:
+    '''TIGRE back projector
+    Back projection models: 'matched' or 'FDK'
+    '''
+    def __init__(self,ct_tigre):
+        self.geo        = ct_tigre.geo
+        self.angles     = ct_tigre.proj_angles
+        self.num_dets   = ct_tigre.num_dets
+        self.num_angles = ct_tigre.num_angles
+        self.num_pixels = ct_tigre.num_pixels
+        self.mode       = ct_tigre.proj_geom
+        self.bp_model   = ct_tigre.bp_model
+
+    def apply_B(self,b):
+        Bb = tigre.Atb(b.reshape(self.num_angles, 1, self.num_dets), self.geo, self.angles, backprojection_type=self.bp_model,mode=self.mode).reshape(self.num_pixels,self.num_pixels)
+        return Bb.reshape(-1)
+
+    def __matmul__(self,b):
+        return self.apply_B(b)
+
+"""   

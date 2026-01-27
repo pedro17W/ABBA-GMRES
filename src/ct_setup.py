@@ -1,11 +1,12 @@
 # %% ***************************************************** Import Packages *****************************************************
 import numpy as np
 import astra 
-import tigre
-import GPUtil
+#import tigre
+#import GPUtil
+
 
 # %% ********************************************************** TIGRE **********************************************************
-
+""""
 class ct_tigre:
     '''Setup for TIGRE toolbox'''
     def __init__(self, num_pixels, num_angles, num_dets, angles, fp_model, bp_model, proj_geom, source_origin, source_det, det_width):
@@ -76,6 +77,8 @@ class ct_tigre:
         else: 
             print("Projection geometry can only be parallel or cone.")
 
+"""
+
 # %% ********************************************************** ASTRA **********************************************************
 
 class ct_astra:
@@ -107,11 +110,16 @@ class ct_astra:
         self.GPU            = GPU
 
         # Check if there is a GPU connected to the host
-        if GPU == True:
-            n_device, = np.shape(GPUtil.getAvailable())
+        if GPU:
+            import os, subprocess
+            if "CUDA_VISIBLE_DEVICES" not in os.environ or os.environ["CUDA_VISIBLE_DEVICES"].strip() == "":
+                raise Exception("GPU=True but CUDA_VISIBLE_DEVICES is not set; you are probably not on a GPU node.")
+            try:
+                subprocess.run(["nvidia-smi"], check=True,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                raise Exception("GPU=True but 'nvidia-smi' failed; CUDA driver not available on this node.")
 
-            if n_device < 1:
-                raise Exception("No GPUs available.")
 
         # SETUP PROJECTION GEOMETRY
         # Parallel beam geometry
