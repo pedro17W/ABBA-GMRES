@@ -66,58 +66,102 @@ from pathlib import Path
 
 #We also need the functions to plot the semivoncergence and increaing noise errors
 
-def _maybe_savefig(outpath):
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def _maybe_savefig(outpath: str | None):
+    """Save figure if outpath is provided (creates parent dirs)."""
     if outpath is None:
         return
-    outpath = Path(outpath)
-    outpath.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(outpath, format="pdf", bbox_inches="tight")
+    outdir = os.path.dirname(outpath)
+    if outdir:
+        os.makedirs(outdir, exist_ok=True)
+    plt.savefig(outpath, bbox_inches="tight")
 
 
-def plot_iter_total_and_noise(iteration_error, total_errors, noise_errors, title=None, outpath=None, show=False):
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def _maybe_savefig(outpath: str | None):
+    """Save figure if outpath is provided (creates parent dirs)."""
+    if outpath is None:
+        return
+    outdir = os.path.dirname(outpath)
+    if outdir:
+        os.makedirs(outdir, exist_ok=True)
+    plt.savefig(outpath, bbox_inches="tight")
+
+
+def _slice_first_n(it, Tot=None, Noi=None, n=200):
+    """Slice arrays to first n iterations (safe if K < n). If n is None, keep all."""
+    it = np.asarray(it)
+    K = it.shape[0]
+
+    if n is None:
+        Kp = K
+    else:
+        Kp = min(K, int(n))
+
+    it = it[:Kp]
+    if Tot is not None:
+        Tot = np.asarray(Tot)[:, :Kp]
+    if Noi is not None:
+        Noi = np.asarray(Noi)[:, :Kp]
+    k = np.arange(1, Kp + 1)
+    return k, it, Tot, Noi
+
+
+def plot_iter_total_and_noise(iteration_error, total_errors, noise_errors,
+                              title=None, outpath=None, show=False, n_iter=None):
     """
-    Plot:
+    Plot (linear scale):
       - iteration_error (single curve)
       - all total error curves
       - all noise error curves
 
-    If outpath is provided, saves the plot as a PDF.
+    If n_iter is None: plot all iterations.
     """
-    it = np.asarray(iteration_error)
-    Tot = np.asarray(total_errors)   # (R,K)
-    Noi = np.asarray(noise_errors)   # (R,K)
-
-    K = it.shape[0]
-    k = np.arange(1, K + 1)
+    k, it, Tot, Noi = _slice_first_n(iteration_error, Tot=total_errors, Noi=noise_errors, n=n_iter)
 
     plt.figure(figsize=(10, 6))
-    #plt.yscale("log")
 
-    # iteration error
     plt.plot(
         k, it,
         color="darkblue", linestyle="-", marker="o", markersize=4,
-        label=r"Iteration error $\|x_k^{\mathrm{exact}} - x_{\mathrm{true}}\|$"
+        linewidth=3.0, alpha=0.95, zorder=6,
+        label=r"Iteration error $\|\bar{x}_k - \bar{x}\|$"
     )
 
-    # all noise errors
     for j in range(Noi.shape[0]):
-        plt.plot(k, Noi[j, :], color="lightgreen", linestyle="--", alpha=0.35)
+        plt.plot(
+            k, Noi[j, :],
+            color="lightgreen", linestyle="--",
+            linewidth=0.6, alpha=0.7, zorder=2
+        )
 
-    # all total errors
     for j in range(Tot.shape[0]):
-        plt.plot(k, Tot[j, :], color="red", linestyle="-.", alpha=0.25)
+        plt.plot(
+            k, Tot[j, :],
+            color="red", linestyle="-.",
+            linewidth=0.6, alpha=0.4, zorder=1
+        )
 
-    # legend entries (avoid duplicates)
-    plt.plot([], [], color="lightgreen", linestyle="--",
-             label=r"Noise error $\|x_k^{\mathrm{noisy}} - x_k^{\mathrm{exact}}\|$ (all)")
-    plt.plot([], [], color="red", linestyle="-.",
-             label=r"Total error $\|x_k^{\mathrm{noisy}} - x_{\mathrm{true}}\|$ (all)")
+    plt.plot([], [], color="lightgreen", linestyle="--", linewidth=1.6,
+             label=r"Noise error $\|x_k - \bar{x}_k\|$ (all)")
+    plt.plot([], [], color="red", linestyle="-.", linewidth=1.6,
+             label=r"Total error $\|x_k - \bar{x}\|$ (all)")
 
     plt.xlabel("Iteration")
     plt.ylabel("Error norm")
-    plt.title(title or "Semiconvergence: iteration, noise, and total errors (all realizations)")
-    plt.grid(True, which="both", linestyle=":", linewidth=0.7)
+    plt.title(title or f"Semiconvergence (first {len(k) - 1} iterations): iteration, noise, and total errors")
+    plt.grid(True, which="major", linestyle=":", linewidth=0.7, alpha=0.8)
+    plt.grid(True, which="minor", linestyle=":", linewidth=0.4, alpha=0.5)
+    plt.yscale('log')
+    plt.minorticks_on()
     plt.legend(loc="best", fontsize=10)
     plt.tight_layout()
 
@@ -127,45 +171,48 @@ def plot_iter_total_and_noise(iteration_error, total_errors, noise_errors, title
     plt.close()
 
 
-def plot_iter_all_total_and_mean_total(iteration_error, total_errors, title=None, outpath=None, show=False):
+def plot_iter_all_total_and_mean_total(iteration_error, total_errors,
+                                       title=None, outpath=None, show=False, n_iter=None):
     """
-    Plot:
+    Plot (linear scale):
       - iteration_error (single curve)
       - all total error curves
       - mean total error curve
 
-    If outpath is provided, saves the plot as a PDF.
+    If n_iter is None: plot all iterations.
     """
-    it = np.asarray(iteration_error)
-    Tot = np.asarray(total_errors)   # (R,K)
-
-    K = it.shape[0]
-    k = np.arange(1, K + 1)
-
+    k, it, Tot, _ = _slice_first_n(iteration_error, Tot=total_errors, Noi=None, n=n_iter)
     mean_tot = np.nanmean(Tot, axis=0)
 
     plt.figure(figsize=(10, 6))
-    #plt.yscale("log")
 
     plt.plot(
         k, it,
         color="darkblue", linestyle="-", marker="o", markersize=4,
-        label=r"Iteration error $\|x_k^{\mathrm{exact}} - x_{\mathrm{true}}\|$"
+        linewidth=2.6, alpha=0.90, zorder=4,
+        label=r"Iteration error $\|\bar{x}_k - \bar{x}\|$"
     )
 
     for j in range(Tot.shape[0]):
-        plt.plot(k, Tot[j, :], color="red", linestyle="-.", alpha=0.25)
+        plt.plot(
+            k, Tot[j, :],
+            color="red", linestyle="-.",
+            linewidth=0.6, alpha=0.8, zorder=1
+        )
 
     plt.plot(
         k, mean_tot,
-        color="red", linestyle="-.", linewidth=3,
-        label=r"Mean total error $\mathbb{E}\|x_k^{\mathrm{noisy}} - x_{\mathrm{true}}\|$"
+        color="maroon", linestyle="-.", linewidth=3, alpha=1.0, zorder=6,
+        label=r"Mean total error $\mathbb{E}\|x_k - \bar{x}\|$"
     )
 
     plt.xlabel("Iteration")
     plt.ylabel("Error norm")
-    plt.title(title or "Semiconvergence: iteration error + total errors (all + mean)")
-    plt.grid(True, which="both", linestyle=":", linewidth=0.7)
+    plt.title(title or f"Semiconvergence (first {len(k) - 1} iterations): iteration error + total errors (all + mean)")
+    plt.grid(True, which="major", linestyle=":", linewidth=0.7, alpha=0.8)
+    plt.grid(True, which="minor", linestyle=":", linewidth=0.4, alpha=0.5)
+    plt.yscale('log')
+    plt.minorticks_on()
     plt.legend(loc="best", fontsize=10)
     plt.tight_layout()
 
@@ -175,45 +222,48 @@ def plot_iter_all_total_and_mean_total(iteration_error, total_errors, title=None
     plt.close()
 
 
-def plot_iter_all_noise_and_mean_noise(iteration_error, noise_errors, title=None, outpath=None, show=False):
+def plot_iter_all_noise_and_mean_noise(iteration_error, noise_errors,
+                                       title=None, outpath=None, show=False, n_iter=None):
     """
-    Plot:
+    Plot (linear scale):
       - iteration_error (single curve)
       - all noise error curves
       - mean noise error curve
 
-    If outpath is provided, saves the plot as a PDF.
+    If n_iter is None: plot all iterations.
     """
-    it = np.asarray(iteration_error)
-    Noi = np.asarray(noise_errors)   # (R,K)
-
-    K = it.shape[0]
-    k = np.arange(1, K + 1)
-
+    k, it, _, Noi = _slice_first_n(iteration_error, Tot=None, Noi=noise_errors, n=n_iter)
     mean_noi = np.nanmean(Noi, axis=0)
 
     plt.figure(figsize=(10, 6))
-    #plt.yscale("log")
 
     plt.plot(
         k, it,
         color="darkblue", linestyle="-", marker="o", markersize=4,
-        label=r"Iteration error $\|x_k^{\mathrm{exact}} - x_{\mathrm{true}}\|$"
+        linewidth=2.6, alpha=0.90, zorder=4,
+        label=r"Iteration error $\|\bar{x}_k - \bar{x}\|$"
     )
 
     for j in range(Noi.shape[0]):
-        plt.plot(k, Noi[j, :], color="lightgreen", linestyle="--", alpha=0.35)
+        plt.plot(
+            k, Noi[j, :],
+            color="lightgreen", linestyle="--",
+            linewidth=0.8, alpha=0.70, zorder=1
+        )
 
     plt.plot(
         k, mean_noi,
-        color="lightgreen", linestyle="--", linewidth=3,
-        label=r"Mean noise error $\mathbb{E}\|x_k^{\mathrm{noisy}} - x_k^{\mathrm{exact}}\|$"
+        color="green", linestyle="--", linewidth=3, alpha=1.0, zorder=6,
+        label=r"Mean noise error $\mathbb{E}\|x_k - \bar{x}_k\|$"
     )
 
     plt.xlabel("Iteration")
     plt.ylabel("Error norm")
-    plt.title(title or "Semiconvergence: iteration error + noise errors (all + mean)")
-    plt.grid(True, which="both", linestyle=":", linewidth=0.7)
+    plt.title(title or f"Semiconvergence (first {len(k) - 1} iterations): iteration error + noise errors (all + mean)")
+    plt.grid(True, which="major", linestyle=":", linewidth=0.7, alpha=0.8)
+    plt.grid(True, which="minor", linestyle=":", linewidth=0.4, alpha=0.5)
+    plt.yscale('log')
+    plt.minorticks_on()
     plt.legend(loc="best", fontsize=10)
     plt.tight_layout()
 

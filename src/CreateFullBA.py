@@ -5,7 +5,7 @@ import numpy as np
 from ct_experiment import make_ba_test_problem, fp_astra, bp_astra, make_BA_operator
 from ct_experiment import construct_full_BA
 
-RESULTS_FILE = "results/lille_iters100_noise0.04.npz" #<------- change this if we use other data
+RESULTS_FILE = "results/lille_iters100_noise0.95.npz" #<------- change this if we use other data
 OUTDIR = "results"  # only this folder will be used/created if needed
 
 SEED = 1
@@ -30,6 +30,8 @@ N = BA_operator.shape[0]
 n = int(np.sqrt(N))
 assert n * n == N
 BA_full = construct_full_BA(BA_operator, n, dtype=np.float64)
+print("how symmetric is the full BA matrix?", np.linalg.norm(BA_full - BA_full.T) / np.linalg.norm(BA_full))
+print("what is the condition number of the full BA matrix?", np.linalg.cond(BA_full))
 
 print("Lets perform a check:")
 x_check = np.random.randn(BA_operator.shape[0])

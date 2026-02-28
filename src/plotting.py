@@ -5,7 +5,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-def plot_reconstructions_around_optimal(
+def plot_reconstructions_around_optimal( 
     iterations: np.ndarray,
     idx_BA: int,
     num_pixels: int,
@@ -17,6 +17,7 @@ def plot_reconstructions_around_optimal(
     prefix: str = "reconstruction",
     scale: str = "truth",  # "truth" | "shared_selected" | "each"
     interpolation: str = "nearest",
+    cmap: str = "gray",    # <-- ADDED (set e.g. "viridis" for colors)
 ):
     """
     Same as before, but with optional shared colormap scaling.
@@ -61,7 +62,7 @@ def plot_reconstructions_around_optimal(
     # -------- Ground truth plot --------
     if x_true is not None:
         plt.figure(figsize=(4, 4))
-        plt.imshow(imgs["truth"], cmap="gray", vmin=vmin, vmax=vmax, interpolation=interpolation)
+        plt.imshow(imgs["truth"], cmap=cmap, vmin=vmin, vmax=vmax, interpolation=interpolation)
         plt.axis("off")
         plt.title("Ground truth")
         plt.tight_layout()
@@ -77,7 +78,7 @@ def plot_reconstructions_around_optimal(
 
     for tag, k, title in cases:
         plt.figure(figsize=(4, 4))
-        plt.imshow(imgs[tag], cmap="gray", vmin=vmin, vmax=vmax, interpolation=interpolation)
+        plt.imshow(imgs[tag], cmap=cmap, vmin=vmin, vmax=vmax, interpolation=interpolation)
         plt.axis("off")
         plt.title(title)
         plt.tight_layout()
@@ -104,33 +105,7 @@ def semiconvergence_from_iterates(
     Combines:
       - compute_rel_errors() for noisy and noise-free iterates
       - plot_semiconvergence()
-
-    Parameters
-    ----------
-    X_noisy : (n, K) array
-        BA-GMRES iterates from noisy RHS (columns are iterates x_k).
-    X_noisefree : (n, K) array
-        BA-GMRES iterates from noise-free RHS (columns are iterates \bar{x}_k).
-    X_true : array
-        Ground truth image (2D) or vector (1D). Will be flattened.
-    outpath : str
-        Output PDF path.
-    title : str
-        Figure title.
-    compute_noise_error : bool
-        If True, compute noise error ||x_k - \bar{x}_k|| from iterates.
-    noise_error : (K,) array or None
-        If provided, uses this instead of computing (even if compute_noise_error=True).
-
-    Returns
-    -------
-    out : dict
-        Contains curves + minima indices/values:
-        - relative_errors, idx_BA, val_BA
-        - noisefree_rel_errors, noisefree_idx_BA, noisefree_val_BA
-        - noise_error
     """
-
     import os
     os.makedirs(os.path.dirname(outpath) or ".", exist_ok=True)
 
@@ -167,28 +142,76 @@ def semiconvergence_from_iterates(
             raise ValueError(f"noise_error has length {noise_error.shape[0]}, expected {K}.")
 
     # --- Plot
+    import matplotlib.pyplot as plt
     ks = np.arange(K)
 
+    # Markers: avoid overcrowding on long runs
+    markevery = max(1, K // 25)
+
     plt.figure()
-    plt.plot(ks, relative_errors, 'k-', linewidth=2)
-    plt.plot(idx_BA, val_BA, 'k*', markersize=10)
 
-    plt.plot(ks, noisefree_rel_errors, 'b--', linewidth=2)
-    plt.plot(noisefree_idx_BA, noisefree_val_BA, 'b*', markersize=10)
+    # Total error: thick + less clear, plotted first (behind)
+    plt.plot(
+        ks,
+        relative_errors,
+        color='red',
+        linestyle='-',
+        marker='^',
+        markersize=4,
+        markevery=markevery,
+        linewidth=8.0,
+        alpha=0.60,
+        zorder=1
+    )
+    plt.plot(idx_BA, val_BA, color='black', marker='*', markersize=10, zorder=4)
 
-    plt.plot(ks, noise_error, 'r-.', linewidth=2)
+    # Iteration error (noise-free): blue, as requested
+    plt.plot(
+        ks,
+        noisefree_rel_errors,
+        color='blue',
+        linestyle='-',
+        marker='o',
+        markersize=4,
+        markevery=markevery,
+        linewidth=1.5,
+        zorder=3
+    )
+    plt.plot(noisefree_idx_BA, noisefree_val_BA, color='blue', marker='*', markersize=10, zorder=4)
+
+    # Noise error: green, thinner + clearer, plotted on top
+    plt.plot(
+        ks,
+        noise_error,
+        color='lightgreen',
+        linestyle='-',
+        marker='s',
+        markersize=4,
+        markevery=markevery,
+        linewidth=1.0,
+        alpha=1.0,
+        zorder=2
+    )
 
     plt.title(title, fontname='cmr10', fontsize=16)
     plt.xlabel('Iteration $k$', fontname='cmr10', fontsize=16)
     plt.ylabel('Norm of error', fontname='cmr10', fontsize=16)
 
-    plt.legend([
-        'BA-GMRES (total error)',
-        f'noisy min: k={idx_BA}, err={val_BA:.2e}',
-        'BA-GMRES (iteration error)',
-        f'noise-free min: k={noisefree_idx_BA}, err={noisefree_val_BA:.2e}',
-        r'Noise error $\|x_k - \bar{x}_k\|$'
-    ])
+    plt.legend(
+        [
+            'BA-GMRES (total error)',
+            f'noisy min: k={idx_BA}, err={val_BA:.2e}',
+            'BA-GMRES (iteration error)',
+            f'noise-free min: k={noisefree_idx_BA}, err={noisefree_val_BA:.2e}',
+            r'Noise error $\|x_k - \bar{x}_k\|$'
+        ],
+        fontsize=9,
+        frameon=True,
+        borderpad=0.3,
+        labelspacing=0.25,
+        handlelength=1.6,
+        handletextpad=0.5
+    )
 
     plt.savefig(outpath, format="pdf", bbox_inches="tight")
     plt.close()
@@ -202,8 +225,6 @@ def semiconvergence_from_iterates(
         "noisefree_val_BA": noisefree_val_BA,
         "noise_error": noise_error,
     }
-
-
 
 def plot_eigs_complex_plane(
     eigenvalues,

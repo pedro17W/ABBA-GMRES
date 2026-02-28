@@ -47,7 +47,7 @@ def plot_spectrum_fullBA(
 
     # ---- |eigenvalues| (sorted) ----
     if save_eig_abs:
-        plt.figure(figsize=(8, 4))
+        plt.figure(figsize=(7, 4))
         plt.plot(np.abs(eigenvalues), marker="o")
         plt.xlabel("Index (sorted by decreasing |λ|)")
         plt.ylabel(r"$|\lambda|$")
@@ -61,7 +61,7 @@ def plot_spectrum_fullBA(
 
     # ---- Eigenvalues in complex plane ----
     if save_eig_complex:
-        plt.figure(figsize=(6, 6))
+        plt.figure(figsize=(7, 4))
         plt.scatter(eigenvalues.real, eigenvalues.imag, marker="o")
         plt.xlabel("Real part")
         plt.ylabel("Imaginary part")
@@ -81,6 +81,62 @@ def plot_spectrum_fullBA(
         "outdir": outdir,
     }
 
+
+
+
+#This is to visualize how the harmonic Ritz values approximate the eigenvalues computed from the full BA matrix
+def plot_eigs_and_harmonic_ritz_complex(
+    eigenvalues,
+    harmonic_ritz_values,
+    iterations=(1,),
+    outpath=None,
+    figsize=(8, 4),
+):
+    """
+    Plot eigenvalues (tiny red 'x') and harmonic Ritz values (blue 'o') in the complex plane.
+
+    Parameters
+    ----------
+    eigenvalues : (n,) array-like (complex)
+    harmonic_ritz_values : list/array
+        Either:
+          - list where harmonic_ritz_values[k-1] contains the Ritz values at iteration k, or
+          - 2D array with shape (K, m_k) (ragged lists are fine).
+    iterations : iterable of ints
+        Iterations k to plot (1-based).
+    outpath : str or None
+        If provided, saves to PDF and closes. If None, just returns after plotting (no show).
+    """
+    eig = np.asarray(eigenvalues).ravel()
+
+    plt.figure(figsize=figsize)
+    ax = plt.gca()
+
+    # Eigenvalues
+    ax.scatter(eig.real, eig.imag, marker="x", s=30, color="red", linewidths=0.8, label="Eigenvalues", alpha=0.9)
+
+    # Harmonic Ritz values for selected iterations
+    first = True
+    for k in iterations:
+        row = np.asarray(harmonic_ritz_values[k - 1]).ravel()
+        ax.scatter(row.real, row.imag, marker="o", s=25, color="blue", alpha=0.7, linewidths=0.8,
+                   label="Harmonic Ritz values" if first else None)
+        first = False
+
+    ax.set_xlabel("Real part")
+    ax.set_ylabel("Imaginary part")
+    ax.set_title("Eigenvalues and harmonic Ritz values (complex plane)")
+    ax.grid(True, linestyle="--", linewidth=0.5)
+    ax.set_aspect("equal", adjustable="datalim")
+    ax.legend()
+    plt.tight_layout()
+
+    if outpath is not None:
+        plt.savefig(outpath, bbox_inches="tight")
+        plt.close()
+        print("Saved:", outpath)
+    else:
+        plt.close()
 
 
 import os
@@ -127,9 +183,9 @@ def eigen_picard_plot_save_fullBA(
 
     # ---- Picard plot ----
     plt.figure(figsize=(8, 4))
-    plt.semilogy(np.abs(eigenvalues), "o-", label=r"$|\lambda_i|$")
-    plt.semilogy(np.abs(xi_hat), "s-", label=r"$|\xi_i|$ (exact)")
-    plt.semilogy(np.abs(xi_noisy), "x--", label=r"$|\xi_i|$ (noisy)")
+    plt.semilogy(np.abs(eigenvalues[:20]), "o-", label=r"$|\lambda_i|$")
+    plt.semilogy(np.abs(xi_hat[:20]), "s-", label=r"$|\bar{\xi}_i|$", alpha=0.3, color="orange")
+    plt.semilogy(np.abs(xi_noisy[:20]), "x--", label=r"$|\xi_i|$ ", alpha=0.7, color="green")
     plt.xlabel("Index $i$")
     plt.ylabel("Magnitude (log scale)")
     plt.title("Eigenvalue Picard Condition")

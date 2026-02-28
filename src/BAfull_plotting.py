@@ -5,7 +5,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 def plot_residual_poly_raw_save_pdf(
     residual_polynomials,
     eigenvalues,
@@ -35,21 +34,21 @@ def plot_residual_poly_raw_save_pdf(
 
     x = np.linspace(lam_min, lam_max, 1200)
     y = p(x)
-    y_plot = np.real(y)  # keep visualization consistent with "discard imag parts"
+    y_plot = (y)  # keep visualization consistent with "discard imag parts"
 
     plt.figure(figsize=(6.2, 4.2))
-    plt.plot(x, y_plot, linewidth=1.6, label=rf"$\Re(p_{{{k}}}(\lambda))$")
+    plt.plot(x, y_plot, linewidth=1.6, label=rf"$\bar{{p}}_{{{k}}}(\lambda)$")
 
     # Eigenvalues as small, semi-transparent red x's
     plt.scatter(
         eig_real_plot,
         np.zeros_like(eig_real_plot),
         marker="x",
-        s=12,
+        s=25,
         linewidths=1.0,
-        alpha=0.35,
+        alpha=0.6,
         color="red",
-        label="Eigenvalues (Re)",
+        label="Eigenvalues",
         zorder=2,
     )
 
@@ -59,9 +58,10 @@ def plot_residual_poly_raw_save_pdf(
     roots_are_almost_real = bool(np.all(np.abs(np.imag(roots)) <= imag_tol))
 
     ax = plt.gca()
+    # NOTE: keep this, but only show the short diagnostic (no coefficients)
     ax.text(
         0.7, 0.2,
-        f"roots ~ real: {roots_are_almost_real}",
+        f"roots are real (up to 1e-12): {roots_are_almost_real}",
         transform=ax.transAxes,
         fontsize=9,
         va="top",
@@ -71,9 +71,9 @@ def plot_residual_poly_raw_save_pdf(
     )
 
     plt.axhline(0, linewidth=0.9)
-    plt.title(rf"Residual polynomial $p_{{{k}}}(\lambda)$ with eigenvalues")
-    plt.xlabel(r"$\Re(\lambda)$")
-    plt.ylabel(rf"$\Re(p_{{{k}}}(\lambda))$")
+    plt.title(rf"Residual polynomial $\bar{{p}}_{{{k}}}(\lambda)$ with eigenvalues")
+    plt.xlabel(r"$\lambda$")
+    plt.ylabel(rf"$\bar{{p}}_{{{k}}}(\lambda)$")
     plt.grid(True, which="both", linestyle=":", alpha=0.5)
     plt.legend(loc="best")
     plt.tight_layout()
@@ -114,10 +114,10 @@ def plot_residual_poly_zoom_save_pdf(
 
     x = np.linspace(lam_min, lam_max, 1200)
     y = p(x)
-    y_plot = np.real(y)
+    #y_plot = np.real(y)
 
     plt.figure(figsize=(6.2, 4.2))
-    plt.plot(x, y_plot, linewidth=1.6, label=rf"$\Re(p_{{{k}}}(\lambda))$")
+    plt.plot(x, y, linewidth=1.6, label=rf"$\bar{{p}}_{{{k}}}(\lambda)$")
     plt.ylim(ylims)
 
     # Eigenvalues as small, semi-transparent red x's
@@ -125,11 +125,11 @@ def plot_residual_poly_zoom_save_pdf(
         eig_real_plot,
         np.zeros_like(eig_real_plot),
         marker="x",
-        s=12,
+        s=25,
         linewidths=1.0,
-        alpha=0.35,
+        alpha=0.6,
         color="red",
-        label="Eigenvalues (Re)",
+        label="Eigenvalues",
         zorder=2,
     )
 
@@ -142,23 +142,22 @@ def plot_residual_poly_zoom_save_pdf(
     lam_max = eigenvalues[lam_max_idx]
     p_at_lam_max = p(lam_max)
 
-    ax = plt.gca()
-    ax.text(
-        0.07, 0.2,
-        f"roots ~ real: {roots_are_almost_real}\n"
-        rf"$p_{{{k}}}(\lambda_{{max}})$ = {p_at_lam_max:.2e}",
-        transform=ax.transAxes,
-        fontsize=9,
-        va="top",
-        ha="left",
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.9),
-        zorder=5,
-    )
+    # NOTE: don't draw coefficient text; keep variables computed as before
+    #ax = plt.gca()
+    #ax.text(
+        #0.07, 0.2,
+        #transform=ax.transAxes,
+        #fontsize=9,
+        #va="top",
+        #ha="left",
+        #bbox=dict(boxstyle="round", facecolor="white", alpha=0.9),
+        #zorder=5,
+    #)
 
     plt.axhline(0, linewidth=0.9)
-    plt.title(rf"Residual polynomial $p_{{{k}}}(\lambda)$ with eigenvalues (zoomed)")
-    plt.xlabel(r"$\Re(\lambda)$")
-    plt.ylabel(rf"$\Re(p_{{{k}}}(\lambda))$")
+    plt.title(rf"Residual polynomial $\bar{{p}}_{{{k}}}(\lambda)$ with eigenvalues (zoomed)")
+    plt.xlabel(r"$\lambda$")
+    plt.ylabel(rf"$\bar{{p}}_{{{k}}}(\lambda)$")
     plt.grid(True, which="both", linestyle=":", alpha=0.5)
     plt.legend(loc="best")
     plt.tight_layout()
@@ -201,7 +200,7 @@ def compute_filter_factors_fullBA(eigenvalues, residual_polynomials, i_max=50):
 
     for k in range(K):
         p_k = residual_polynomials[k]
-        phi[k, :] = 1 - p_k(lam)
+        phi[k, :] = 1 - np.abs(p_k(lam))
 
     return phi
 
@@ -329,30 +328,32 @@ def plot_spectral_weights_vs_iteration_error_save_pdf(
     if use_abs:
         denom = np.maximum(np.abs(eigenvalues), eps)
         component_spectral = np.abs(xi) / denom
-        ylab = r"$|\xi_i| / |\lambda_i|$"
+        ylab = r"$|{\xi}_i| / |\lambda_i|$"
     else:
         denom = np.real(eigenvalues)
         denom = np.where(np.abs(denom) < eps, np.sign(denom) * eps + eps, denom)
         component_spectral = np.real(xi) / denom
-        ylab = r"$\Re(\xi_i) / \Re(\lambda_i)$"
+        ylab = r"$\Re(\bar{\xi}_i) / \Re(\lambda_i)$"
 
     # Plot
     plt.figure(figsize=(7.2, 4.6))
 
     plt.plot(
-        component_spectral[:len(iteration_errors) + 1],
+        component_spectral[:min(len(iteration_errors) + 1, 300)],
         label=ylab,
         linewidth=2,
         marker="o",
         markersize=3,
+        color="green",
     )
 
     plt.plot(
-        iteration_errors,
-        label=r"$\|x_k - x_{\mathrm{true}}\|$",
+        iteration_errors[:300],
+        label=r"$\|{x}_k - \bar{x}\|$",
         linewidth=2,
         marker="s",
         markersize=3,
+        color="red",
     )
 
     plt.yscale("log")
@@ -360,7 +361,7 @@ def plot_spectral_weights_vs_iteration_error_save_pdf(
 
     plt.xlabel("Index (spectral component / iteration)")
     plt.ylabel("Magnitude (log scale)")
-    plt.title("Eigenbasis weights vs GMRES iteration error")
+    plt.title("Eigenbasis weights vs GMRES total error")
     plt.legend()
     plt.tight_layout()
 

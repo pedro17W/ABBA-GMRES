@@ -38,9 +38,12 @@ def make_sinogram(ct, X_true):
 #We add noise to the sinogram to be able to "create" semiconvergence
 def add_relative_noise(b_exact, rnl):
     e = np.random.randn(b_exact.size).astype(np.float32)
-    e /= np.linalg.norm(e)
-    b = b_exact + rnl * np.linalg.norm(b_exact) * e
+    #e /= np.linalg.norm(e)
+    b = b_exact + rnl * e
     return b
+
+
+
 
 #We define the forward and backward projector for the specific problem and run BA-GMRES to be able to extract the iterations, residuals 
 #and Hessenberg matrices
@@ -154,8 +157,12 @@ def make_ba_test_problem(
 
     # ---------- Choose geometry based on ground truth ----------
     if ground_truth == "shepp_logan" or ground_truth == "random":
-        if name == "lille":
+        if name == "mini":
+            num_pixels, num_dets, num_angles = 16, 16, 60
+        elif name == "lille":
             num_pixels, num_dets, num_angles = 32, 32, 180
+        elif name == "BIGlille":
+            num_pixels, num_dets, num_angles = 64, 64, 180
         elif name == "medium":
             num_pixels, num_dets, num_angles = 128, 128, 180
         elif name == "stor":
@@ -234,130 +241,77 @@ def make_BA_operator(A, B, dtype=np.float64):
 ############-----------------------------------------------------------------------------------------------############
 ############_-------------------------This is for the new Ritz basis---------------------------------------############
 
-def ritz_decomp_from_arnoldi_lists(V_list, H_rect_list, H_square_list, rhs_vec, k, one_based=True, return_Yk=False):
+def ritz_decomp_from_HW(W, H, rhs_vec, k, return_Yk=False, use_lstsq=True):
     """
-    Compute harmonic Ritz coordinates of rhs_vec using Arnoldi outputs stored in lists.
+    Convenience wrapper for BA_GMRES outputs.
 
-    Your arnoldi_mgs stores, for each step:
-        V_list[j]         = V_{j+1}   with shape (n, j+1)
-        H_rect_list[j]    = \bar H_{j+1} with shape (j+2, j+1)
-        H_square_list[j]  = H_{j+1}   with shape (j+1, j+1)
+    Given BA_GMRES outputs:
+      W : (n, p+1) Krylov basis (columns orthonormal; W[:,0]=r0/beta)
+      H : (p+1, p) final rectangular Hessenberg (last cycle)
 
-    Here, k denotes the Krylov subspace dimension (number of basis vectors). If one_based=True,
-    then k=1 corresponds to j=0 (first stored entry). If one_based=False, k is the list index.
-
-    It forms the harmonic Ritz generalized eigenproblem (as in your code):
-        (H_rect^H H_rect) y = θ (H_square^H) y
-
-    then computes:
-        g = V_k^H rhs_vec
-        c = Y_k^{-1} g
-
-    Parameters
-    ----------
-    V_list : list of ndarray
-        V_list[j] has shape (n, j+1).
-    H_rect_list : list of ndarray
-        H_rect_list[j] has shape (j+2, j+1).
-    H_square_list : list of ndarray
-        H_square_list[j] has shape (j+1, j+1).
-    rhs_vec : array_like, shape (n,)
-        Vector to expand (in the same space as V_k columns).
-    k : int
-        Krylov dimension to use.
-        - if one_based=True: k=1,2,... corresponds to V_list[k-1]
-        - if one_based=False: k is the list index (0,1,2,...)
-    one_based : bool, default True
-        Interpret k as 1-based Krylov dimension.
-    return_Yk : bool, default False
-        If True, also return harmonic Ritz values theta and matrix Y_k.
-
-    Returns
-    -------
-    c : ndarray, shape (k,)
-        Harmonic Ritz coordinates of rhs_vec on span(V_k).
-    (optional) theta : ndarray, shape (k,)
-        Harmonic Ritz values.
-    (optional) Y_k : ndarray, shape (k, k)
-        Harmonic Ritz eigenvectors in Krylov coordinates.
+    We form:
+      V_k = W[:, :k]
+      H_k = H[:k, :k]
+    and compute ordinary Ritz coordinates c of rhs_vec:
+      theta, Y_k = eig(H_k)
+      g = V_k^H rhs_vec
+      c solves Y_k c = g
     """
-    j = k - 1 if one_based else k
+    import numpy as np
+    import scipy.linalg
 
-    V_k = np.asarray(V_list[j])            # (n, k)
-    H_rect = np.asarray(H_rect_list[j])    # (k+1, k)?? actually (k+1+1, k) = (k+1? see below)
-    H_sq = np.asarray(H_square_list[j])    # (k, k)
-    r = np.asarray(rhs_vec).reshape(-1)
+    W = np.asarray(W)
+    H = np.asarray(H)
+    rhs_vec = np.asarray(rhs_vec).reshape(-1)
 
-    n, kk = V_k.shape
-    if r.shape[0] != n:
-        raise ValueError(f"rhs_vec has length {r.shape[0]} but V_k has n={n}.")
-    if kk != k:
-        raise ValueError(f"Requested k={k} but V_list[{j}] has {kk} columns.")
+    n, wp1 = W.shape
+    p = wp1 - 1
 
-    # Your stored shapes imply:
-    # H_rect_list[j] should be (k+1, k)?? but from your code it's H_current = H[:k+2, :k+1]
-    # with k replaced by j => (j+2, j+1) = (k+1, k)
-    # Actually if kk = k then H_rect should be (k+1, k). Let's enforce that:
-    if H_rect.shape != (k + 1, k):
-        raise ValueError(f"H_rect_list[{j}] must be shape {(k+1, k)}, got {H_rect.shape}.")
-    if H_sq.shape != (k, k):
-        raise ValueError(f"H_square_list[{j}] must be shape {(k, k)}, got {H_sq.shape}.")
+    if H.shape != (p + 1, p):
+        raise ValueError(f"Expected H shape {(p+1, p)} for W shape {W.shape}, got {H.shape}.")
+    if not (1 <= k <= p):
+        raise ValueError(f"k must satisfy 1 <= k <= p={p}, got k={k}.")
+    if rhs_vec.shape[0] != n:
+        raise ValueError(f"rhs_vec has length {rhs_vec.shape[0]} but W has n={n}.")
 
-    from scipy.linalg import eig
-    # Harmonic Ritz generalized eigenproblem
-    lhs = H_rect.conj().T @ H_rect   # (k, k)
-    rhs = H_sq.conj().T              # (k, k)
-    theta, Y_k = eig(lhs, rhs)
+    V_k = W[:, :k]      # (n, k)
+    H_k = H[:k, :k]     # (k, k)
 
-    # Coordinates
-    g = V_k.conj().T @ r             # (k,)
-    c = np.linalg.solve(Y_k, g)      # (k,)
+    theta, Y_k = scipy.linalg.eig(H_k)
+
+    g = V_k.conj().T @ rhs_vec
+
+    if use_lstsq:
+        c = np.linalg.lstsq(Y_k, g, rcond=None)[0]
+    else:
+        c = np.linalg.solve(Y_k, g)
 
     if return_Yk:
         return c, theta, Y_k
     return c
 
 
-###The function that plots the homemade Harmonic Ritz basis
-def ritz_piccard(ritz_xi_exact, ritz_xi_noisy, harmonic_ritz_values, k, outpath=None):
-    """
-    Picard-ish plot for the harmonic Ritz setting (SAVES as PDF; does not show).
 
-    Plots (semilogy) for iteration k:
-      - |theta_i|       : harmonic Ritz values at iteration k
-      - |c_i| (exact)   : harmonic Ritz coordinates of the exact rhs/residual
-      - |c_i| (noisy)   : harmonic Ritz coordinates of the noisy rhs/residual
 
-    Parameters
-    ----------
-    ritz_xi_exact : array_like
-        Harmonic Ritz coordinates c for the exact rhs/residual (length k).
-    ritz_xi_noisy : array_like
-        Harmonic Ritz coordinates c for the noisy rhs/residual (length k).
-    harmonic_ritz_values : list
-        harmonic_ritz_values[k-1] contains the harmonic Ritz values theta at iteration k.
-    k : int
-        Iteration number (1-based).
-    outpath : str or None
-        Where to save the figure. If None, saves to "ritz_piccard_k{k}.pdf" in the current folder.
-    """
-    theta = np.asarray(harmonic_ritz_values[k - 1]).reshape(-1)
-    c_exact = np.asarray(ritz_xi_exact).reshape(-1)
-    c_noisy = np.asarray(ritz_xi_noisy).reshape(-1)
+def ritz_piccard(c, theta, k, outpath=None, title_prefix="Ritz", sort_by_theta=True):
+    theta = np.asarray(theta).reshape(-1)
+    c = np.asarray(c).reshape(-1)
 
-    # Make lengths consistent (use the smallest)
-    m = min(theta.size, c_exact.size, c_noisy.size)
+    m = min(theta.size, c.size)
     theta = theta[:m]
-    c_exact = c_exact[:m]
-    c_noisy = c_noisy[:m]
+    c = c[:m]
+
+    if sort_by_theta:
+        perm = np.argsort(-np.abs(theta))
+        theta = theta[perm]
+        c = c[perm]
 
     fig = plt.figure(figsize=(8, 4))
     plt.semilogy(np.abs(theta), 'o-', label=r'$|\theta_i|$')
-    plt.semilogy(np.abs(c_exact), 's-', label=r'$|c_i|$ (exact)')
-    plt.semilogy(np.abs(c_noisy), 'x--', label=r'$|c_i|$ (noisy)')
-    plt.xlabel('Index $i$')
+    plt.semilogy(np.abs(c), 'x--', label=r'$|c_i|$')
+    plt.xlabel('Index $i$ (ordered by $|\theta|$)' if sort_by_theta else 'Index $i$')
     plt.ylabel('Magnitude (log scale)')
-    plt.title(f'Harmonic Ritz Picard-ish Condition (iteration k={k})')
+    plt.title(f'{title_prefix} Picard plot (iteration k={k})')
     plt.grid(True, which="both", linestyle=":")
     plt.legend()
     plt.tight_layout()
@@ -369,93 +323,40 @@ def ritz_piccard(ritz_xi_exact, ritz_xi_noisy, harmonic_ritz_values, k, outpath=
     fig.savefig(outpath, format="pdf", bbox_inches="tight")
     plt.close(fig)
 
-
-def plot_bagmres_ritz_weights_vs_iteration_error(
-    ritz_xi,
-    ritz_values_list,
-    iteration_errors,
-    k,
-    outpath=None,
-    use_ratio=True,
-    title_prefix="BA-GMRES"
+def plot_bagmres_ritz_weights_vs_total_error(
+    c, theta, total_errors, k,
+    outpath=None, title_prefix="BA-GMRES", sort_by_theta=True
 ):
-    """
-    Save a plot comparing harmonic-Ritz “spectral” weights with the BA-GMRES iteration error curve.
+    theta = np.asarray(theta).reshape(-1)
+    c = np.asarray(c).reshape(-1)
+    tot_err = np.asarray(total_errors).reshape(-1)
 
-    This is the BA-GMRES analogue of plotting |xi_i|/|lambda_i| vs ||x_k - x_true||:
-      - Replace eigenbasis coefficients xi_i with harmonic Ritz coefficients c_i (= ritz_xi)
-      - Replace eigenvalues lambda_i with harmonic Ritz values theta_i (at iteration k)
-
-    Parameters
-    ----------
-    ritz_xi : array_like, shape (k,) or (<=k,)
-        Harmonic Ritz coordinates c at iteration k (output of ritz_decomp_from_arnoldi_lists(...)).
-    ritz_values_list : list
-        List where ritz_values_list[k-1] contains harmonic Ritz values theta at iteration k.
-        (In your script, this is typically `ritz_noisefree`.)
-    iteration_errors : array_like
-        Error curve across BA-GMRES iterations, e.g. ||x_j - x_true|| for j=1..iters.
-    k : int
-        Iteration number (1-based) selecting ritz_values_list[k-1].
-    outpath : str or None
-        Where to save the figure as PDF. If None, saves to "ritz_weights_vs_itererr_k{k}.pdf".
-    use_ratio : bool, default True
-        If True, plot |c_i|/|theta_i| (closest analogue to |xi_i|/|lambda_i|).
-        If False, plot |c_i| alone.
-    title_prefix : str, default "BA-GMRES"
-        Prefix used in the plot title.
-
-    Notes
-    -----
-    - The two curves have different x-axes meanings (component index vs iteration index),
-      but overlaying them is still a useful qualitative diagnostic (as in your eigenbasis plots).
-    """
-    theta = np.asarray(ritz_values_list[k - 1]).reshape(-1)
-    c = np.asarray(ritz_xi).reshape(-1)
-    it_err = np.asarray(iteration_errors).reshape(-1)
-
-    # Align Ritz quantities to the smallest available length
     m = min(theta.size, c.size)
     theta = theta[:m]
     c = c[:m]
 
-    if use_ratio:
-        eps = 1e-300  # avoid divide-by-zero
-        weights = np.abs(c) / np.maximum(np.abs(theta), eps)
-        w_label = r"$|c_i|/|\theta_i|$"
-    else:
-        weights = np.abs(c)
-        w_label = r"$|c_i|$"
+    if sort_by_theta:
+        perm = np.argsort(-np.abs(theta))
+        theta = theta[perm]
+        c = c[perm]
+
+    eps = 1e-300
+    weights = np.abs(c) / np.maximum(np.abs(theta), eps)
 
     fig = plt.figure(figsize=(10, 6))
-
-    plt.plot(
-        weights,
-        label=w_label,
-        linewidth=2,
-        marker='o',
-        markersize=4
-    )
-
-    plt.plot(
-        it_err,
-        label=r"$\|x_j - x_{\mathrm{true}}\|$",
-        linewidth=2,
-        marker='s',
-        markersize=4
-    )
+    plt.plot(weights, label=r"$|c_i|/|\theta_i|$", linewidth=2, marker='o', markersize=4)
+    plt.plot(tot_err, label=r"$\|x_k - \bar{x}\|_2$", linewidth=2, marker='s', markersize=4)
 
     plt.yscale("log")
     plt.grid(True, which="both", ls="--", alpha=0.4)
-
-    plt.xlabel("Index (component i for weights, iteration j for errors)")
+    plt.xlabel("Index (weights) / iteration (error)")
     plt.ylabel("Magnitude (log scale)")
-    plt.title(f"{title_prefix}: Ritz weights vs iteration error (k={k})")
+    plt.title(f"{title_prefix}: Ritz weights vs total error (k={k})")
     plt.legend()
     plt.tight_layout()
 
     if outpath is None:
-        outpath = f"ritz_weights_vs_itererr_k{k}.pdf"
+        outpath = f"ritz_weights_vs_totalerr_k{k}.pdf"
 
     os.makedirs(os.path.dirname(outpath) or ".", exist_ok=True)
     fig.savefig(outpath, format="pdf", bbox_inches="tight")
@@ -491,3 +392,138 @@ def construct_full_BA(BA, n, dtype=float):
         M[:, j] = BA(e)
 
     return M
+
+
+def expected_propagated_noise_norm(
+    W,
+    filter_matrix,
+    eigenvalues,
+    eta,
+    k_expect=10,            # <-- NEW name: how many k's to compute (first k_expect)
+    use_solve=True,
+    make_plot=True,
+    figsize=(5, 3),
+    outpath=None,
+):
+    """
+    Compute E(||R_k^Phi xi^e||_2^2) for k = 0..k_expect-1 and optionally plot sqrt(.) vs k.
+
+    If make_plot is True:
+      - If outpath is not None: saves the figure to outpath and closes.
+      - Else: closes without showing (headless-safe).
+
+    Returns (exppropsquared, exppropnorm).
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    W = np.asarray(W)
+    filter_matrix = np.asarray(filter_matrix)
+    eigenvalues = np.asarray(eigenvalues)
+
+    # Cap to available iterations in filter_matrix
+    k_expect = int(k_expect)
+    if k_expect < 1:
+        raise ValueError("k_expect must be >= 1.")
+    k_expect = min(k_expect, filter_matrix.shape[0])
+
+    if filter_matrix.shape[1] != eigenvalues.size:
+        raise ValueError(
+            f"filter_matrix has {filter_matrix.shape[1]} columns, "
+            f"but eigenvalues has size {eigenvalues.size}."
+        )
+    if np.any(eigenvalues == 0):
+        raise ValueError("eigenvalues contains zeros; cannot form Lambda^{-1}.")
+
+    G = W.conj().T @ W
+
+    exppropsquared = []
+    for k in range(k_expect):
+        Dk = np.diag(filter_matrix[k, :] / eigenvalues)
+        M = Dk.conj().T @ G @ Dk
+
+        if use_solve:
+            val = (eta**2) * np.trace(np.linalg.solve(G, M))
+        else:
+            val = (eta**2) * np.trace(M @ np.linalg.inv(G))
+
+        exppropsquared.append(np.real_if_close(val))
+
+    exppropnorm = [np.sqrt(v) for v in exppropsquared]
+
+    if make_plot:
+        plt.figure(figsize=figsize)
+        plt.plot(range(1, k_expect + 1), exppropnorm, marker="o")
+        plt.yscale("log")
+        plt.xlabel("Iteration $k$")
+        plt.title(r"Expected norm of propagated noise $\sqrt{\mathbb{E}\|\bar{ \mathbf{R}}^{\Phi}_k \xi^e\|_2^2}$")
+        plt.tight_layout()
+
+        if outpath is not None:
+            plt.savefig(outpath, bbox_inches="tight")
+            plt.close()
+            print("Saved:", outpath)
+        else:
+            plt.close()
+
+    return exppropsquared, exppropnorm
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_sinograms(
+    CT_setup,
+    b_exact: np.ndarray,
+    b_noisy: np.ndarray,
+    *,
+    noise: float,
+    savepath: str | None = None,
+):
+    """
+    Visualize sinograms (exact vs noisy) from flattened RHS vectors.
+    Title becomes: "Sinogram noise = <noise>"
+    """
+
+    num_angles = int(CT_setup.num_angles)
+    num_dets   = int(CT_setup.num_dets)
+    m_expected = num_angles * num_dets
+
+    b_exact = np.asarray(b_exact).reshape(-1)
+    b_noisy = np.asarray(b_noisy).reshape(-1)
+
+    if b_exact.size != m_expected or b_noisy.size != m_expected:
+        raise ValueError(
+            f"Expected b_exact and b_noisy to have length {m_expected} "
+            f"(num_angles*num_dets = {num_angles}*{num_dets}), "
+            f"got {b_exact.size} and {b_noisy.size}."
+        )
+
+    sino_exact = b_exact.reshape(num_angles, num_dets)
+    sino_noisy = b_noisy.reshape(num_angles, num_dets)
+
+    fig, axes = plt.subplots(1, 2, figsize=(9.6, 4.2), constrained_layout=True)
+
+    vmin = float(min(sino_exact.min(), sino_noisy.min()))
+    vmax = float(max(sino_exact.max(), sino_noisy.max()))
+
+    im0 = axes[0].imshow(sino_exact, aspect="auto", origin="lower", vmin=vmin, vmax=vmax)
+    axes[0].set_title("Exact sinogram")
+    axes[0].set_xlabel("Detector index")
+    axes[0].set_ylabel("Angle index")
+    fig.colorbar(im0, ax=axes[0], fraction=0.046)
+
+    im1 = axes[1].imshow(sino_noisy, aspect="auto", origin="lower", vmin=vmin, vmax=vmax)
+    axes[1].set_title("Noisy sinogram")
+    axes[1].set_xlabel("Detector index")
+    axes[1].set_ylabel("Angle index")
+    fig.colorbar(im1, ax=axes[1], fraction=0.046)
+
+    fig.suptitle(f"Sinogram noise = {noise}", fontsize=14)
+
+    if savepath is not None:
+        plt.savefig(savepath, dpi=200, bbox_inches="tight")
+    plt.show()
